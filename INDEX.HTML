@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Tanda Terima</title>
+
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+<style>
+body { font-family: Arial; padding:20px; background:#f4f6f8;}
+.container { max-width:900px; margin:auto; background:#fff; padding:20px;}
+h2 { text-align:center; }
+
+input { width:100%; padding:6px; margin:4px 0; border:1px solid #ccc; }
+
+table { width:100%; border-collapse: collapse; margin-top:10px; border:2px solid #000;}
+th,td { border:1px solid #000; padding:5px; font-size:12px;}
+th { background:#eee; text-align:center;}
+
+button { margin-top:10px; padding:10px; width:100%; }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+<h2>TANDA TERIMA</h2>
+
+<input id="dari" placeholder="Dari">
+<input id="untuk" placeholder="Untuk">
+<input type="date" id="tanggal">
+<input id="no" placeholder="No">
+
+<table id="tabel">
+<thead>
+<tr>
+<th>No</th>
+<th>Kode Barang</th>
+<th>Nama Barang</th>
+<th>Qty</th>
+<th>Keterangan</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+
+<button onclick="tambahBaris()">Tambah Baris</button>
+
+<h3>Tanda Tangan</h3>
+<input id="pengirim" placeholder="Pengirim">
+<input id="mengetahui" placeholder="Mengetahui">
+<input id="pembawa" placeholder="Pembawa">
+<input id="penerima" placeholder="Penerima">
+
+<button onclick="generatePDF()">Generate PDF</button>
+</div>
+
+<script>
+const { jsPDF } = window.jspdf;
+let databaseBarang = [];
+let no = 1;
+
+const API_URL = "https://script.google.com/macros/s/AKfycbzYThb0fhFKy1ghqmUTOp9oL-jnH3fRrCLhkDSl6H4KgnQy524adUDwcUgLwhdLKYT9/exec";
+
+// LOAD DATA
+fetch(API_URL)
+.then(res => res.json())
+.then(data => {
+  console.log("DATA:", data);
+  databaseBarang = data;
+  buildDatalist();
+  tambahBaris();
+});
+
+// TAMBAH BARIS
+function tambahBaris(){
+  let tr = document.createElement("tr");
+
+  tr.innerHTML = `
+    <td>${no}</td>
+    <td>
+      <input list="barangList"
+        oninput="pilihBarang(this)"
+        onchange="pilihBarang(this)"
+        onblur="pilihBarang(this)"
+        placeholder="Kode Barang">
+    </td>
+    <td><input readonly></td>
+    <td><input type="number"></td>
+    <td><input></td>
+  `;
+
+  document.querySelector("#tabel tbody").appendChild(tr);
+  no++;
+}
+
+// DATALIST
+function buildDatalist(){
+  let dl = document.createElement("datalist");
+  dl.id = "barangList";
+
+  databaseBarang.forEach(b => {
+    let kode = b.kode || b.KODE || b.Kode || b['Kode Barang'] || '';
+    let opt = document.createElement("option");
+    opt.value = kode;
+    dl.appendChild(opt);
+  });
+
+  document.body.appendChild(dl);
+}
+
+// AUTO ISI NAMA BARANG
+function pilihBarang(input){
+  let kode = input.value.trim().toLowerCase();
+  let row = input.closest("tr");
+  let namaInput = row.querySelectorAll("input")[1];
+
+  let found = databaseBarang.find(b => {
+    let k = (
+      b.kode ||
+      b.KODE ||
+      b.Kode ||
+      b['Kode Barang'] ||
+      b['kode barang'] ||
+      ''
+    ).toString().toLowerCase().trim();
+
+    return k === kode;
+  });
+
+  if(found){
+    namaInput.value = (
+      found.nama ||
+      found.NAMA ||
+      found.Nama ||
+      found['Nama Barang'] ||
+      found['nama barang'] ||
+      ''
+    );
+  } else {
+    namaInput.value = "";
+  }
+}
+
+// GENERATE PDF (FIX TOTAL)
+function generatePDF(){
+  const pdf = new jsPDF();
+
+  pdf.setFontSize(14);
+  pdf.text("TANDA TERIMA", 90, 15);
+
+  pdf.setFontSize(10);
+  pdf.text("Dari: " + document.getElementById('dari').value, 10, 25);
+  pdf.text("Untuk: " + document.getElementById('untuk').value, 10, 32);
+  pdf.text("Tanggal: " + document.getElementById('tanggal').value, 140, 25);
+  pdf.text("No: " + document.getElementById('no').value, 140, 32);
+
+  let startX = 10;
+  let y = 40;
+
+  let widths = [10, 35, 65, 20, 40];
+  let headers = ["No","Kode","Nama","Qty","Ket"];
+
+  let x = startX;
+
+  // HEADER
+  headers.forEach((h,i)=>{
+    pdf.rect(x,y,widths[i],8);
+    pdf.text(h,x+2,y+5);
+    x += widths[i];
+  });
+
+  y += 8;
+
+  let rows = document.querySelectorAll("#tabel tbody tr");
+
+  rows.forEach((row,i)=>{
+    let inp = row.querySelectorAll("input");
+
+    let data = [
+      (i+1).toString(),
+      inp[0].value || "",
+      inp[1].value || "",
+      inp[2].value || "",
+      inp[3].value || ""
+    ];
+
+    // AUTO WRAP
+    let split = data.map((d,j)=> pdf.splitTextToSize(d, widths[j]-4));
+    let maxLine = Math.max(...split.map(s=>s.length));
+    let rowHeight = maxLine * 6;
+
+    let x = startX;
+
+    data.forEach((d,j)=>{
+      let txt = pdf.splitTextToSize(d, widths[j]-4);
+
+      pdf.rect(x,y,widths[j],rowHeight);
+      pdf.text(txt,x+2,y+5);
+
+      x += widths[j];
+    });
+
+    y += rowHeight;
+
+    if(y > 270){
+      pdf.addPage();
+      y = 20;
+    }
+  });
+
+  // TTD
+  y += 20;
+
+  if(y > 270){
+    pdf.addPage();
+    y = 20;
+  }
+
+  pdf.text("Pengirim",20,y);
+  pdf.text("Mengetahui",70,y);
+  pdf.text("Pembawa",120,y);
+  pdf.text("Penerima",160,y);
+
+  y += 20;
+
+  pdf.text(document.getElementById('pengirim').value || "-",20,y);
+  pdf.text(document.getElementById('mengetahui').value || "-",70,y);
+  pdf.text(document.getElementById('pembawa').value || "-",120,y);
+  pdf.text(document.getElementById('penerima').value || "-",160,y);
+
+  pdf.save("tanda_terima.pdf");
+}
+</script>
+
+</body>
+</html>
